@@ -72,7 +72,7 @@ if(firebaseConfig.apiKey.startsWith("PASTE")){
   $("warn").textContent="Setup needed: paste your Firebase config into index.html.";$("warn").classList.remove("hide");
 }else{
   const app=initializeApp(firebaseConfig);
-  db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});
+  db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()}),experimentalForceLongPolling:true});
   auth=getAuth(app);
   onSnapshot(collection(db,"members"),s=>{members=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.at||0)-(b.at||0));render()});
   onSnapshot(collection(db,"months"),s=>{months={};s.docs.forEach(d=>months[d.id]=d.data().entries||{});render()});
@@ -80,7 +80,7 @@ if(firebaseConfig.apiKey.startsWith("PASTE")){
     user=u;role=null;$("sign").textContent=u?"Sign out":"Sign in";$("who").textContent=u?"Signed in as "+u.email+" (checking access...)":"Not signed in";render();
     if(!u)return;
     const email=u.email.toLowerCase();
-    onSnapshot(doc(db,"editors",email),s=>{role=s.exists()?s.data().role:null;$("who").textContent="Signed in as "+u.email+(s.exists()?" - role: "+role:" - no editor record found for this email")+(s.metadata.fromCache?" (from saved data)":"");render();if(role==="owner")watchEditors()},e=>{role=null;$("who").textContent="Signed in as "+u.email+" - error: "+(e.code||e.message);render()});
+    onSnapshot(doc(db,"editors",email),{includeMetadataChanges:true},s=>{role=s.exists()?s.data().role:null;$("who").textContent="Signed in as "+u.email+(s.exists()?" - role: "+role:(s.metadata.fromCache?" - cannot reach the database yet (check internet)":" - no editor record found for this email"))+(s.metadata.fromCache&&s.exists()?" (saved copy)":"");render();if(role==="owner")watchEditors()},e=>{role=null;$("who").textContent="Signed in as "+u.email+" - error: "+(e.code||e.message);render()});
   });
   $("sign").onclick=()=>user?signOut(auth):signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>alert("Sign-in failed: "+e.message));
 }
