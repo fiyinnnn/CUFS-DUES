@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function me() { return request.auth.token.email.lower(); }
+    function isEditor() { return signedIn() && exists(/databases/$(db)/documents/editors/$(me())); }
+    function isOwner() { return isEditor() && get(/databases/$(db)/documents/editors/$(me())).data.role == 'owner'; }
+    match /members/{id} { allow read: if true; allow write: if isEditor(); }
+    match /months/{id}  { allow read: if true; allow write: if isEditor(); }
+    match /editors/{e} {
+      allow get: if signedIn() && me() == e;
+      allow list: if isEditor();
+      allow write: if isOwner();
+    }
+  }
+}
