@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CUFS Dues</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f9d55">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f7f7f5;--card:#fff;--text:#1d1d1b;--muted:#6b6b66;--line:#e2e2dc;
+--green:#1f9d55;--red:#d64545;--blue:#2f6fd6}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--card:#222221;--text:#f0f0ec;--muted:#9a9a94;--line:#363633}}
+:root[data-theme="dark"]{--bg:#161615;--card:#222221;--text:#f0f0ec;--muted:#9a9a94;--line:#363633}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:16px;max-width:560px;margin:0 auto}
+h1{font-size:20px;margin:4px 0 12px}
+.row{display:flex;gap:8px;margin-bottom:10px}
+select,input,button{font:inherit;color:var(--text);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
+select,input{flex:1;min-width:0}
+button{cursor:pointer}
+.sum{display:flex;gap:8px;margin:10px 0}
+.pill{flex:1;text-align:center;border-radius:10px;padding:8px 4px;color:#fff;font-size:13px}
+.pill b{display:block;font-size:20px}
+.g{background:var(--green)}.r{background:var(--red)}.b{background:var(--blue)}
+.item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;border-left-width:8px}
+.item.g{border-left-color:var(--green);background:var(--card);color:var(--text)}
+.item.r{border-left-color:var(--red);background:var(--card);color:var(--text)}
+.item.b{border-left-color:var(--blue);background:var(--card);color:var(--text)}
+.name{flex:1;font-weight:500}
+.tick{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;cursor:pointer;user-select:none}
+.item.g .tick{background:var(--green)}.item.r .tick{background:var(--red)}.item.b .tick{background:var(--blue)}
+.lbl{font-size:12px;color:var(--muted);min-width:64px;text-align:right}
+.x{border:none;background:none;color:var(--muted);padding:4px 8px}
+.hint{font-size:12px;color:var(--muted);margin:8px 0}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted);flex-wrap:wrap;margin-bottom:8px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+</style>
+</head>
+<body>
+<h1>CUFS Executives Dues</h1>
+
+<div class="row">
+  <select id="month"></select>
+  <button id="newMonth">+ Month</button>
+</div>
+
+<div class="sum">
+  <div class="pill g"><b id="cg">0</b>Paid</div>
+  <div class="pill r"><b id="cr">0</b>Default</div>
+  <div class="pill b"><b id="cb">0</b>Unable</div>
+</div>
+
+<div class="legend">
+  <span><span class="dot g"></span>Paid</span>
+  <span><span class="dot r"></span>Default (not paid)</span>
+  <span><span class="dot b"></span>Unable to pay</span>
+</div>
+<div class="hint">Tap the box beside a name to cycle: red → green → blue. Switch the month above to edit past months (e.g. late payers).</div>
+
+<div id="list"></div>
+
+<div class="row">
+  <input id="newName" placeholder="Add executive name">
+  <button id="add">Add</button>
+</div>
+<div class="row">
+  <button id="copy" style="flex:1">Copy summary</button>
+  <button id="backup" style="flex:1">Backup</button>
+  <button id="restore" style="flex:1">Restore</button>
+</div>
+<div class="hint">Data saves in this browser only. Use Backup to copy your data somewhere safe, and Restore to paste it back.</div>
+
+<script>
+var KEY='cufs-dues-v1';
+var state={execs:[],months:{},current:''};
+var ORDER=['r','g','b'];
+var LABEL={r:'Default',g:'Paid',b:'Unable'};
+var MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function load(){try{var s=localStorage.getItem(KEY);if(s){state=JSON.parse(s);}}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+function monthKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function monthLabel(k){var p=k.split('-');return MN[+p[1]-1]+' '+p[0];}
+function ensureMonth(k){if(!state.months[k])state.months[k]={};}
+
+function render(){
+  var sel=document.getElementById('month');
+  var keys=Object.keys(state.months).sort().reverse();
+  sel.innerHTML=keys.map(function(k){return '<option value="'+k+'"'+(k===state.current?' selected':'')+'>'+monthLabel(k)+'</option>';}).join('');
+  var m=state.months[state.current]||{};
+  var c={g:0,r:0,b:0};
+  var list=document.getElementById('list');
+  list.innerHTML='';
+  state.execs.forEach(function(n,i){
+    var st=m[n]||'r'; c[st]++;
+    var d=document.createElement('div');d.className='item '+st;
+    d.innerHTML='<div class="tick">'+(st==='g'?'✓':st==='b'?'•':'')+'</div><div class="name"></div><div class="lbl">'+LABEL[st]+'</div><button class="x" aria-label="Remove">✕</button>';
+    d.querySelector('.name').textContent=n;
+    d.querySelector('.tick').onclick=function(){
+      ensureMonth(state.current);
+      var cur=state.months[state.current][n]||'r';
+      state.months[state.current][n]=ORDER[(ORDER.indexOf(cur)+1)%3];
+      save();render();
+    };
+    d.querySelector('.x').onclick=function(){
+      if(confirm('Remove '+n+' from all months?')){
+        state.execs.splice(i,1);
+        Object.keys(state.months).forEach(function(k){delete state.months[k][n];});
+        save();render();
+      }
+    };
+    list.appendChild(d);
+  });
+  document.getElementById('cg').textContent=c.g;
+  document.getElementById('cr').textContent=c.r;
+  document.getElementById('cb').textContent=c.b;
+}
+
+document.getElementById('month').onchange=function(e){state.current=e.target.value;save();render();};
+document.getElementById('newMonth').onclick=function(){
+  var def=monthKey(new Date());
+  var k=prompt('Month to add (YYYY-MM)',def);
+  if(!k)return;
+  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(k)){alert('Use the format YYYY-MM, e.g. 2026-10');return;}
+  ensureMonth(k);state.current=k;save();render();
+};
+function addName(){
+  var i=document.getElementById('newName');var n=i.value.trim();
+  if(!n||state.execs.indexOf(n)>-1)return;
+  state.execs.push(n);i.value='';save();render();
+}
+document.getElementById('add').onclick=addName;
+document.getElementById('newName').onkeydown=function(e){if(e.key==='Enter')addName();};
+
+document.getElementById('copy').onclick=function(){
+  var m=state.months[state.current]||{};
+  var out={g:[],r:[],b:[]};
+  state.execs.forEach(function(n){out[m[n]||'r'].push(n);});
+  var t='CUFS Dues - '+monthLabel(state.current)+'\n\nPaid ('+out.g.length+'):\n'+out.g.join('\n')+'\n\nDefault ('+out.r.length+'):\n'+out.r.join('\n')+'\n\nUnable to pay ('+out.b.length+'):\n'+out.b.join('\n');
+  copyText(t,'Summary copied');
+};
+document.getElementById('backup').onclick=function(){copyText(JSON.stringify(state),'Backup copied');};
+document.getElementById('restore').onclick=function(){
+  var s=prompt('Paste your backup here');
+  if(!s)return;
+  try{var o=JSON.parse(s);if(!o.execs||!o.months)throw 0;state=o;save();render();}catch(e){alert('That backup could not be read.');}
+};
+function copyText(t,msg){
+  try{navigator.clipboard.writeText(t).then(function(){alert(msg);},function(){prompt('Copy this:',t);});}
+  catch(e){prompt('Copy this:',t);}
+}
+
+if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}
+load();
+if(!state.execs)state.execs=[];
+if(!state.months)state.months={};
+var nowK=monthKey(new Date());
+ensureMonth(nowK);
+if(!state.current||!state.months[state.current])state.current=nowK;
+render();
+</script>
+</body>
+</html>
