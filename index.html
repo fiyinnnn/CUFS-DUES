@@ -48,3 +48,101 @@ select,input{flex:1;min-width:0}button{cursor:pointer}
 <div class="row eo"><input id="nn" placeholder="Name"><input id="np" placeholder="Position"><button id="add">Add</button></div>
 <div class="row"><button id="copy" style="flex:1">Copy summary</button><button id="imp" class="eo owner" style="flex:1">Import old backup</button></div>
 <div id="own" class="panel hide"><h2>Editors</h2><div id="elist"></div>
+<div class="row" style="margin-top:8px"><input id="ee" type="email" placeholder="Gmail address to promote"><button id="eadd">Promote</button></div>
+<div class="note">They must sign in with this exact Google email.</div></div>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,setDoc,deleteDoc,addDoc,onSnapshot} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,signOut,onAuthStateChanged} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+// ====== PASTE YOUR FIREBASE CONFIG HERE ======
+const firebaseConfig={apiKey:"AIzaSyAvIp1fnEFsExlQPElu0TQqIDRGLgGydcQ",authDomain:"cufs-dues.firebaseapp.com",projectId:"cufs-dues",storageBucket:"cufs-dues.firebasestorage.app",messagingSenderId:"594121098115",appId:"1:594121098115:web:c03d53c0829b3f15afacb6"};
+// =============================================
+
+const $=id=>document.getElementById(id);
+const MN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const LBL={r:"Default",g:"Paid",b:"Unable"},ORD=["r","g","b"];
+const mk=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+const ml=k=>{const p=k.split("-");return MN[+p[1]-1]+" "+p[0]};
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const OWNER_EMAIL="fiyinfoluwaabolarin11@gmail.com";
+let members=[],months={},editors=[],cur=mk(new Date()),role=null,user=null,db,auth;
+const canEdit=()=>role==="editor"||role==="owner";
+
+if(firebaseConfig.apiKey.startsWith("PASTE")){
+  $("warn").textContent="Setup needed: paste your Firebase config into index.html.";$("warn").classList.remove("hide");
+}else{
+  const app=initializeApp(firebaseConfig);
+  db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()}),experimentalForceLongPolling:true});
+  auth=getAuth(app);
+  onSnapshot(collection(db,"members"),s=>{members=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.at||0)-(b.at||0));render()});
+  onSnapshot(collection(db,"months"),s=>{months={};s.docs.forEach(d=>months[d.id]=d.data().entries||{});render()});
+  onAuthStateChanged(auth,u=>{
+    user=u;role=null;$("sign").textContent=u?"Sign out":"Sign in";$("who").textContent=u?"Signed in as "+u.email+" (checking access...)":"Not signed in";render();
+    if(!u)return;
+    const email=u.email.toLowerCase();
+    onSnapshot(doc(db,"editors",email),{includeMetadataChanges:true},s=>{role=s.exists()?s.data().role:null;if(email===OWNER_EMAIL)role="owner";$("who").textContent="Signed in as "+JSON.stringify(email)+" ("+email.length+" chars)"+(s.exists()?" - role: "+role:(s.metadata.fromCache?" - cannot reach the database yet (check internet)":" - no editor record found for this email"))+(s.metadata.fromCache&&s.exists()?" (saved copy)":"");render();if(role==="owner")watchEditors()},e=>{role=null;$("who").textContent="Signed in as "+u.email+" - error: "+(e.code||e.message);render()});
+  });
+  $("sign").onclick=()=>user?signOut(auth):signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>alert("Sign-in failed: "+e.message));
+}
+let ew=false;
+function watchEditors(){if(ew)return;ew=true;onSnapshot(collection(db,"editors"),s=>{editors=s.docs.map(d=>({id:d.id,...d.data()}));render()})}
+
+function save(id,patch){return setDoc(doc(db,"months",cur),{entries:{[id]:patch}},{merge:true}).catch(e=>alert("Not allowed: "+e.message))}
+
+function render(){
+  const ed=canEdit();
+  document.body.classList.toggle("ed",ed);
+  document.querySelectorAll(".eo").forEach(e=>e.classList.toggle("hide",!ed));
+  document.querySelectorAll(".owner").forEach(e=>e.classList.toggle("hide",role!=="owner"));
+  $("own").classList.toggle("hide",role!=="owner");
+  $("badge").textContent=role==="owner"?"Owner":ed?"Editor":"View only";
+  $("badge").className="badge"+(ed?" ed":"");
+  $("hint").textContent=ed?"Tap the box to cycle red → green → blue. Pick a past month to fix late payments.":"You can view live updates but not edit.";
+  const keys=[...new Set([...Object.keys(months),cur])].sort().reverse();
+  $("month").innerHTML=keys.map(k=>`<option value="${k}"${k===cur?" selected":""}>${ml(k)}</option>`).join("");
+  const m=months[cur]||{},c={g:0,r:0,b:0},list=$("list");list.innerHTML="";
+  members.forEach(mb=>{
+    const e=m[mb.id]||{},st=e.s||"r";c[st]++;
+    const d=document.createElement("div");d.className="item "+st;
+    d.innerHTML=`<div class="tick">${st==="g"?"✓":st==="b"?"•":""}</div><div class="mid"><div><span class="name"></span><span class="tag"></span></div><div class="sub"></div></div>${ed?'<button class="x">✕</button>':""}`;
+    d.querySelector(".name").textContent=mb.name;
+    const tag=d.querySelector(".tag");tag.textContent=mb.position||(ed?"+ position":"");if(!tag.textContent)tag.remove();
+    const sub=d.querySelector(".sub");
+    if(st==="g"){
+      if(ed){sub.append("Paid on ");const i=document.createElement("input");i.type="date";i.value=e.d||"";i.onchange=()=>save(mb.id,{d:i.value});sub.append(i)}
+      else sub.textContent="Paid"+(e.d?" on "+e.d:"");
+    }else sub.textContent=LBL[st];
+    if(ed){
+      d.querySelector(".tick").onclick=()=>{const n=ORD[(ORD.indexOf(st)+1)%3];save(mb.id,{s:n,d:n==="g"?(e.d||today()):""})};
+      if(tag)tag.onclick=()=>{const p=prompt("Position for "+mb.name,mb.position||"");if(p!==null)setDoc(doc(db,"members",mb.id),{position:p.trim()},{merge:true})};
+      d.querySelector(".x").onclick=()=>{if(confirm("Remove "+mb.name+"?"))deleteDoc(doc(db,"members",mb.id))};
+    }
+    list.appendChild(d);
+  });
+  $("cg").textContent=c.g;$("cr").textContent=c.r;$("cb").textContent=c.b;
+  $("elist").innerHTML="";
+  editors.forEach(x=>{const r=document.createElement("div");r.className="er";r.innerHTML="<span></span>";r.firstChild.textContent=x.id+" ("+x.role+")";
+    if(x.role!=="owner"&&user&&x.id!==user.email.toLowerCase()){const b=document.createElement("button");b.className="x";b.textContent="Demote";b.onclick=()=>deleteDoc(doc(db,"editors",x.id));r.append(b)}
+    $("elist").append(r)});
+}
+$("month").onchange=e=>{cur=e.target.value;render()};
+$("newMonth").onclick=()=>{const k=prompt("Month to add (YYYY-MM)",mk(new Date()));if(!k)return;if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(k))return alert("Use YYYY-MM, e.g. 2026-10");cur=k;setDoc(doc(db,"months",k),{entries:{}},{merge:true})};
+$("add").onclick=async()=>{const n=$("nn").value.trim();if(!n)return;await addDoc(collection(db,"members"),{name:n,position:$("np").value.trim(),at:Date.now()}).catch(e=>alert(e.message));$("nn").value="";$("np").value=""};
+$("eadd").onclick=()=>{const e=$("ee").value.trim().toLowerCase();if(!e)return;setDoc(doc(db,"editors",e),{role:"editor"}).then(()=>$("ee").value="").catch(x=>alert(x.message))};
+$("copy").onclick=()=>{const m=months[cur]||{},o={g:[],r:[],b:[]};
+  members.forEach(x=>{const e=m[x.id]||{};o[e.s||"r"].push(x.name+(x.position?" ("+x.position+")":"")+(e.s==="g"&&e.d?" - "+e.d:""))});
+  const t=`CUFS Dues - ${ml(cur)}\n\nPaid (${o.g.length}):\n${o.g.join("\n")}\n\nDefault (${o.r.length}):\n${o.r.join("\n")}\n\nUnable to pay (${o.b.length}):\n${o.b.join("\n")}`;
+  navigator.clipboard.writeText(t).then(()=>alert("Summary copied"),()=>prompt("Copy this:",t))};
+$("imp").onclick=async()=>{
+  const s=prompt("Paste your old Backup text here");if(!s)return;
+  try{
+    const o=JSON.parse(s),ids={};let t=Date.now();
+    for(const n of o.execs){const r=await addDoc(collection(db,"members"),{name:n,position:"",at:t++});ids[n]=r.id}
+    for(const k in o.months){const en={};for(const n in o.months[k])if(ids[n])en[ids[n]]={s:o.months[k][n],d:""};await setDoc(doc(db,"months",k),{entries:en},{merge:true})}
+    alert("Imported")
+  }catch(e){alert("Import failed: "+e.message)}
+};
+render();
+if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+</script></body></html>
