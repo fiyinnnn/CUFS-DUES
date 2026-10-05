@@ -40,6 +40,7 @@ select,input{flex:1;min-width:0}button{cursor:pointer}
 </style></head><body>
 <div class="top"><h1>CUFS Executives Dues</h1><span id="badge" class="badge">Viewing</span></div>
 <div id="warn" class="warn hide"></div>
+<div id="who" class="hint"></div>
 <div class="row"><select id="month"></select><button id="newMonth" class="eo">+ Month</button><button id="sign">Sign in</button></div>
 <div class="sum"><div class="pill g"><b id="cg">0</b>Paid</div><div class="pill r"><b id="cr">0</b>Default</div><div class="pill b"><b id="cb">0</b>Unable</div></div>
 <div id="hint" class="hint"></div>
@@ -76,10 +77,10 @@ if(firebaseConfig.apiKey.startsWith("PASTE")){
   onSnapshot(collection(db,"members"),s=>{members=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.at||0)-(b.at||0));render()});
   onSnapshot(collection(db,"months"),s=>{months={};s.docs.forEach(d=>months[d.id]=d.data().entries||{});render()});
   onAuthStateChanged(auth,u=>{
-    user=u;role=null;$("sign").textContent=u?"Sign out":"Sign in";render();
+    user=u;role=null;$("sign").textContent=u?"Sign out":"Sign in";$("who").textContent=u?"Signed in as "+u.email+" (checking access...)":"Not signed in";render();
     if(!u)return;
     const email=u.email.toLowerCase();
-    onSnapshot(doc(db,"editors",email),s=>{role=s.exists()?s.data().role:null;render();if(role==="owner")watchEditors()},()=>{role=null;render()});
+    onSnapshot(doc(db,"editors",email),s=>{role=s.exists()?s.data().role:null;$("who").textContent="Signed in as "+u.email+(s.exists()?" - role: "+role:" - no editor record found for this email")+(s.metadata.fromCache?" (from saved data)":"");render();if(role==="owner")watchEditors()},e=>{role=null;$("who").textContent="Signed in as "+u.email+" - error: "+(e.code||e.message);render()});
   });
   $("sign").onclick=()=>user?signOut(auth):signInWithPopup(auth,new GoogleAuthProvider()).catch(e=>alert("Sign-in failed: "+e.message));
 }
